@@ -2,7 +2,8 @@
 name = "cat2"
 version = "0.0.0"
 edition = "2021"
-
+license = "GPL-3"
+license-file = "LICENSE"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

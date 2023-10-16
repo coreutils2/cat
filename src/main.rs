@@ -2,13 +2,12 @@ mod constants;
 
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use clap::{Parser};
 use constants::*;
 
 #[derive(Debug, Parser)]
 struct CliArgs {
-    files: Vec<PathBuf>,
+    files: Vec<String>,
     /// number all output lines
     #[clap(short = 'n', long)]
     number: bool,
@@ -37,44 +36,52 @@ fn main() -> anyhow::Result<()> {
         writeln!(stdout, "{}", VERSION_STRING)?;
     }
 
-    // read stdin if no files were passed
-    if args.files.len() == 0 {
-        loop {
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-        }
-    }
-
     // read all files
     for file_path in args.files {
-        let mut file = File::open(&file_path)?;
-        let mut buf = [0; BUFFER_SIZE];
-        match args.number {
-            true => {
-                // TODO: fix this
-                writeln!(stderr, "Error: This flag has not been implemented yet!")?;
-                return anyhow::Ok(());
-            }
-            false => {
+        match file_path.as_str() {
+            // for stdin
+            "-" => {
                 loop {
-                    let bytes_read = file.read(&mut buf)?;
-                    if bytes_read == 0 { break; }
-                    let mut content = String::with_capacity(BUFFER_SIZE);
-                    for byte in buf {
-                        content.push(byte as char);
-                    }
-                    match args.squeeze_blank {
-                        true => {
-                            // TODO: figure out how to do this with the buffer vector instead of the string
-                            let trimmed_content = content.replace("\r\n\r\n", "\r\n");
-                            writeln!(stdout, "{trimmed_content}")?;
-                            stdout.flush()?;
-                        }
-                        false => {
-                            writeln!(stdout, "{}", content)?;
-                            stdout.flush()?;
+                    let mut input = String::new();
+                    match std::io::stdin().read_line(&mut input) {
+                        Ok(_l) => {}
+                        Err(err) => {
+                            if err.to_string() == WINDOWS_ERR { break; }
                         }
                     };
+                }
+            }
+            _ => {
+                let mut file = File::open(&file_path)?;
+                let mut buf = [0; BUFFER_SIZE];
+                match args.number {
+                    true => {
+                        // TODO: fix this
+                        writeln!(stderr, "Error: This flag has not been implemented yet!")?;
+                        return anyhow::Ok(());
+                    }
+                    false => {
+                        loop {
+                            let bytes_read = file.read(&mut buf)?;
+                            if bytes_read == 0 { break; }
+                            let mut content = String::with_capacity(BUFFER_SIZE);
+                            for byte in buf {
+                                content.push(byte as char);
+                            }
+                            match args.squeeze_blank {
+                                true => {
+                                    // TODO: figure out how to do this with the buffer vector instead of the string
+                                    let trimmed_content = content.replace("\r\n\r\n", "\r\n");
+                                    writeln!(stdout, "{trimmed_content}")?;
+                                    stdout.flush()?;
+                                }
+                                false => {
+                                    writeln!(stdout, "{}", content)?;
+                                    stdout.flush()?;
+                                }
+                            };
+                        }
+                    }
                 }
             }
         }

@@ -7,7 +7,9 @@ use constants::*;
 
 #[derive(Debug, Parser)]
 struct CliArgs {
-    files: Vec<String>,
+    /// Concatenate FILE(s) to standard output.
+    /// With no FILE, or when FILE is -, read standard input.
+    file: Vec<String>,
     /// number all output lines
     #[clap(short = 'n', long)]
     number: bool,
@@ -27,9 +29,9 @@ fn main() -> anyhow::Result<()> {
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
     // TODO: parse the --squeeze-blank flag according to the OS
-    let _line_break = match OS {
-        "windows" => { "\r\n" }
-        _ => { "\n" }
+    let (empty_lines, replacement) = match OS {
+        "windows" => { ("\r\n\r\n", "\r\n") }
+        _ => { ("\n\n", "\n") }
     };
     let args = CliArgs::parse();
     if args.version {
@@ -37,15 +39,16 @@ fn main() -> anyhow::Result<()> {
     }
 
     // read all files
-    for file_path in args.files {
+    for file_path in args.file {
         match file_path.as_str() {
             // for stdin
             "-" => {
                 loop {
                     let mut input = String::new();
                     match std::io::stdin().read_line(&mut input) {
-                        Ok(_l) => {}
+                        Ok(l) => { if l == 0 { break; } }
                         Err(err) => {
+                            writeln!(stdout, "{err}")?;
                             if err.to_string() == WINDOWS_ERR { break; }
                         }
                     };
@@ -71,15 +74,14 @@ fn main() -> anyhow::Result<()> {
                             match args.squeeze_blank {
                                 true => {
                                     // TODO: figure out how to do this with the buffer vector instead of the string
-                                    let trimmed_content = content.replace("\r\n\r\n", "\r\n");
+                                    let trimmed_content = content.replace(empty_lines, replacement);
                                     writeln!(stdout, "{trimmed_content}")?;
-                                    stdout.flush()?;
                                 }
                                 false => {
                                     writeln!(stdout, "{}", content)?;
-                                    stdout.flush()?;
                                 }
                             };
+                            stdout.flush()?;
                         }
                     }
                 }

@@ -1,14 +1,17 @@
 mod constants;
 
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use clap::{Parser};
 use constants::*;
 
 #[derive(Debug, Parser)]
 struct CliArgs {
-    /// Concatenate FILE(s) to standard output.
+    /// con-(cat2)-enate FILE(s) to standard output.
     /// With no FILE, or when FILE is -, read standard input.
+    ///
+    /// To stop reading standard input use CTRL+D in *nix systems
+    /// and CTRL+Z on Windows.
     file: Vec<String>,
     /// number all output lines
     #[clap(short = 'n', long)]
@@ -19,7 +22,7 @@ struct CliArgs {
     /// print the version and exit
     #[clap(short = 'V', long)]
     version: bool,
-    /// suppress repeated empty output lines
+    /// remove all empty lines
     #[clap(short = 's', long)]
     squeeze_blank: bool,
 }
@@ -27,12 +30,12 @@ struct CliArgs {
 // TODO: ERROR MESSAGES
 fn main() -> anyhow::Result<()> {
     let mut stdout = std::io::stdout();
-    let mut stderr = std::io::stderr();
+    let stdin = std::io::stdin();
     // TODO: parse the --squeeze-blank flag according to the OS
-    let (empty_lines, replacement) = match OS {
-        "windows" => { ("\r\n\r\n", "\r\n") }
-        _ => { ("\n\n", "\n") }
-    };
+    // let (empty_lines, replacement) = match OS {
+    //     "windows" => { ("\r\n\r\n", "\r\n") }
+    //     _ => { ("\n\n", "\n") }
+    // };
     let args = CliArgs::parse();
     if args.version {
         writeln!(stdout, "{}", VERSION_STRING)?;
@@ -45,45 +48,53 @@ fn main() -> anyhow::Result<()> {
             "-" => {
                 loop {
                     let mut input = String::new();
-                    match std::io::stdin().read_line(&mut input) {
-                        Ok(l) => { if l == 0 { break; } }
+                    match stdin.read_line(&mut input) {
+                        Ok(n) => {
+                            // if we get EOF from *nix systems, break;
+                            if n == 0 { break; }
+                        }
                         Err(err) => {
-                            writeln!(stdout, "{err}")?;
-                            if err.to_string() == WINDOWS_ERR { break; }
+                            // break; when receiving CTRL-Z on windows
+                            // source: https://stackoverflow.com/a/16136924/19984790
+                            if err.kind() == ErrorKind::InvalidData { break; }
                         }
                     };
                 }
             }
             _ => {
-                let mut file = File::open(&file_path)?;
-                let mut buf = [0; BUFFER_SIZE];
-                match args.number {
-                    true => {
-                        // TODO: fix this
-                        writeln!(stderr, "Error: This flag has not been implemented yet!")?;
-                        return anyhow::Ok(());
-                    }
-                    false => {
-                        loop {
-                            let bytes_read = file.read(&mut buf)?;
-                            if bytes_read == 0 { break; }
-                            let mut content = String::with_capacity(BUFFER_SIZE);
-                            for byte in buf {
-                                content.push(byte as char);
+                let file = File::open(&file_path)?;
+                loop {
+                    let reader = BufReader::new(&file);
+                    let mut i: usize = 1;
+                    for line in reader.lines() {
+                        let content = line?;
+                        match args.squeeze_blank {
+                            true => { if content.is_empty() { continue; } }
+                            false => {}
+                        }
+                        match args.number_non_blank {
+                            true => {
+                                if !content.is_empty() {
+                                    writeln!(stdout, "{} {content}", i)?;
+                                    i += 1;
+                                }
                             }
-                            match args.squeeze_blank {
-                                true => {
-                                    // TODO: figure out how to do this with the buffer vector instead of the string
-                                    let trimmed_content = content.replace(empty_lines, replacement);
-                                    writeln!(stdout, "{trimmed_content}")?;
+                            false => {
+                                match args.number {
+                                    true => {
+                                        writeln!(stdout, "{} {content}", i)?;
+                                        i += 1;
+                                    }
+                                    // if we have reached here no flags were passed
+                                    // so print normally
+                                    false => {
+                                        writeln!(stdout, "{content}")?;
+                                    }
                                 }
-                                false => {
-                                    writeln!(stdout, "{}", content)?;
-                                }
-                            };
-                            stdout.flush()?;
+                            }
                         }
                     }
+                    break;
                 }
             }
         }

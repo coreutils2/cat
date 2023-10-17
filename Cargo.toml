@@ -1,5 +1,5 @@
 [package]
-name = "cat2"
+name = "cat"
 version = "0.0.0"
 edition = "2021"
 license = "GPL-3"
